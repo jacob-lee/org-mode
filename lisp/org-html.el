@@ -661,6 +661,7 @@ postamble DIV."
       ((eq (plist-get parameters :LaTeX-fragments) 'mathjax ) 'mathjax)
       ((eq (plist-get parameters :LaTeX-fragments) t        ) 'mathjax)
       ((eq (plist-get parameters :LaTeX-fragments) 'dvipng  ) 'dvipng)
+      ((eq (plist-get parameters :LaTeX-fragments) 'pdf2svg  ) 'pdf2svg)
       (t nil))))
   (goto-char (point-min))
   (let (label l1)

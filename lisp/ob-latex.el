@@ -86,7 +86,10 @@ This function is called by `org-babel-execute-src-block'."
 		      org-export-latex-packages-alist)))
         (cond
          ((and (string-match "\\.png$" out-file) (not imagemagick))
-          (org-create-formula-image
+          (org-create-formula-image (assq 'dvipng org-latex-image-formats-alist)
+           body out-file org-format-latex-options in-buffer))
+         ((string-match "\\.svg$" out-file)
+          (org-create-formula-image (assq 'pdf2svg org-latex-image-formats-alist)
            body out-file org-format-latex-options in-buffer))
          ((or (string-match "\\.pdf$" out-file) imagemagick)
 	  (require 'org-latex)

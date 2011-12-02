@@ -16666,6 +16666,13 @@ The images can be removed again with \\[org-ctrl-c-ctrl-c]."
     ("\\[" "\\\\\\[[^\000]*?\\\\\\]" 0 nil)
     ("$$" "\\$\\$[^\000]*?\\$\\$" 0 nil))
   "Regular expressions for matching embedded LaTeX.")
+(defconst org-latex-image-formats-alist
+  `((dvipng "latex" "dvipng" ".dvi" ".png" 'png nil)
+    (pdf2svg "pdflatex" "pdf2svg" ".pdf" ".svg" 'svg t))
+  "List of constants for image post-processors.
+
+ (<symbol> <latex-processor> <image-processor> <intermediate-ext> <final-ext> <format-symbol> <need-preview-fit>).")
+
 
 (defvar org-export-have-math nil) ;; dynamic scoping
 (defun org-format-latex (prefix &optional dir overlays msg at
@@ -16683,7 +16690,7 @@ Some of the options can be changed using the variable
 	 (org-format-latex-header-extra
 	  (plist-get (org-infile-export-plist) :latex-header-extra))
 	 (cnt 0) txt hash link beg end re e checkdir
-	 executables-checked string
+	 executables-checked string image-format
 	 m n block-type block linkfile movefile ov)
     ;; Check the different regular expressions
     (while (setq e (pop re-list))
@@ -16717,21 +16724,22 @@ Some of the options can be changed using the variable
 				'(org-protected t))))
 		(add-text-properties (match-beginning n) (match-end n)
 				     '(org-protected t))))
-	     ((eq processing-type 'dvipng)
+	     ((or (assq processing-type org-latex-image-formats-alist) t)
 	      ;; Process to an image
 	      (setq txt (match-string n)
 		    beg (match-beginning n) end (match-end n)
 		    cnt (1+ cnt))
 	      (let (print-length print-level) ; make sure full list is printed
-		(setq hash (sha1 (prin1-to-string
+		(setq image-format (assq processing-type org-latex-image-formats-alist)
+		      hash (sha1 (prin1-to-string
 				  (list org-format-latex-header
 					org-format-latex-header-extra
 					org-export-latex-default-packages-alist
 					org-export-latex-packages-alist
 					org-format-latex-options
 					forbuffer txt)))
-		      linkfile (format "%s_%s.png" prefix hash)
-		      movefile (format "%s_%s.png" absprefix hash)))
+		      linkfile (format (concat "%s_%s" (nth 4 image-format)) prefix hash)
+		      movefile (format (concat "%s_%s" (nth 4 image-format)) absprefix hash)))
 	      (setq link (concat block "[[file:" linkfile "]]" block))
 	      (if msg (message msg cnt))
 	      (goto-char beg)
@@ -16741,13 +16749,13 @@ Some of the options can be changed using the variable
 
 	      (unless executables-checked
 		(org-check-external-command
-		 "latex" "needed to convert LaTeX fragments to images")
+		 (nth 1 image-format) "needed to convert LaTeX fragments to images")
 		(org-check-external-command
-		 "dvipng" "needed to convert LaTeX fragments to images")
+		 (nth 2 image-format) "needed to convert LaTeX fragments to images")
 		(setq executables-checked t))
 
 	      (unless (file-exists-p movefile)
-		(org-create-formula-image
+		(org-create-formula-image image-format
 		 txt movefile opt forbuffer))
 	      (if overlays
 		  (progn
@@ -16763,10 +16771,10 @@ Some of the options can be changed using the variable
 			  (overlay-put ov 'invisible t)
 			  (overlay-put
 			   ov 'end-glyph
-			   (make-glyph (vector 'png :file movefile))))
+			   (make-glyph (vector (nth 5 image-format) :file movefile))))
 		      (overlay-put
 		       ov 'display
-		       (list 'image :type 'png :file movefile :ascent 'center)))
+		       (list 'image :type (nth 5 image-format) :file movefile :ascent 'center)))
 		    (push ov org-latex-fragment-image-overlays)
 		    (goto-char end))
 		(delete-region beg end)
@@ -16884,7 +16892,7 @@ inspection."
       latex-frag)))
 
 ;; This function borrows from Ganesh Swami's latex2png.el
-(defun org-create-formula-image (string tofile options buffer)
+(defun org-create-formula-image (image-format string tofile options buffer)
   "This calls dvipng."
   (require 'org-latex)
   (let* ((tmpdir (if (featurep 'xemacs)
@@ -16893,8 +16901,8 @@ inspection."
 	 (texfilebase (make-temp-name
 		       (expand-file-name "orgtex" tmpdir)))
 	 (texfile (concat texfilebase ".tex"))
-	 (dvifile (concat texfilebase ".dvi"))
-	 (pngfile (concat texfilebase ".png"))
+	 (dvifile (concat texfilebase (nth 3 image-format)))
+	 (pngfile (concat texfilebase (nth 4 image-format)))
 	 (fnh (if (featurep 'xemacs)
                   (font-height (get-face-font 'default))
                 (face-attribute 'default :height nil)))
@@ -16912,35 +16920,42 @@ inspection."
 	       org-export-latex-default-packages-alist
 	       org-export-latex-packages-alist t
 	       org-format-latex-header-extra))
-      (insert "\n\\begin{document}\n" string "\n\\end{document}\n")
+      (if (nth 6 image-format)
+	  (insert "\\usepackage[tightpage,active]{preview}\n\\begin{document}\\begin{preview}\n" string "\n\\end{preview}\\end{document}\n")
+	(insert "\n\\begin{document}\n" string "\n\\end{document}\n"))
       (require 'org-latex)
       (org-export-latex-fix-inputenc))
     (let ((dir default-directory))
       (condition-case nil
 	  (progn
 	    (cd tmpdir)
-	    (call-process "latex" nil nil nil texfile))
+	    (call-process (nth 1 image-format) nil nil nil texfile))
 	(error nil))
       (cd dir))
     (if (not (file-exists-p dvifile))
-	(progn (message "Failed to create dvi file from %s" texfile) nil)
+	(progn (message "Failed to create pdf file from %s" texfile) nil)
       (condition-case nil
-	  (call-process "dvipng" nil nil nil
-			"-fg" fg "-bg" bg
-			"-D" dpi
-			;;"-x" scale "-y" scale
-			"-T" "tight"
-			"-o" pngfile
-			dvifile)
+	  (case (car image-format)
+	    ('dvipng
+	     (call-process "dvipng" nil nil nil
+			   "-fg" fg "-bg" bg
+			   "-D" dpi
+			   ;;"-x" scale "-y" scale
+			   "-T" "tight"
+			   "-o" pngfile
+			   dvifile))
+	    ('pdf2svg
+	     (call-process "pdf2svg" nil nil nil
+			   dvifile pngfile)))
 	(error nil))
       (if (not (file-exists-p pngfile))
 	  (if org-format-latex-signal-error
-	      (error "Failed to create png file from %s" texfile)
-	    (message "Failed to create png file from %s" texfile)
+	      (error "Failed to create svg file from %s" texfile)
+	    (message "Failed to create svg file from %s" texfile)
 	    nil)
 	;; Use the requested file name and clean up
 	(copy-file pngfile tofile 'replace)
-	(loop for e in '(".dvi" ".tex" ".aux" ".log" ".png") do
+	(loop for e in `(,(nth 3 image-format) ".tex" ".aux" ".log" ,(nth 4 image-format)) do
 	      (delete-file (concat texfilebase e)))
 	pngfile))))
 

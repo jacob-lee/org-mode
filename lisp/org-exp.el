@@ -530,6 +530,7 @@ is not available on all systems."
 	  (const :tag "Do not process math in any way" nil)
 	  (const :tag "Obsolete, use dvipng setting" t)
 	  (const :tag "Use dvipng to make images" dvipng)
+	  (const :tag "Use pdf2svg to make images" pdf2svg)
 	  (const :tag "Use MathJax to display math" mathjax)
 	  (const :tag "Leave math verbatim" verbatim)))
 
